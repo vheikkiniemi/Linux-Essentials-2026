@@ -194,7 +194,7 @@ The service and configuration paths depend on the installed PHP version.
 Open the pool configuration file, replacing `XX` with the installed PHP version number:
 
 ```
-sudo vi /etc/phpXX/php-fpm.d/www.conf
+sudo nano /etc/phpXX/php-fpm.d/www.conf
 ```
 
 For this exercise, configure PHP-FPM to listen on a local TCP port:
@@ -226,7 +226,7 @@ sudo netstat -tln | grep 9000
 Create a WordPress configuration file:
 
 ```
-sudo vi /etc/nginx/http.d/wordpress.conf
+sudo nano /etc/nginx/http.d/wordpress.conf
 ```
 
 Add the following configuration:
@@ -303,7 +303,7 @@ sudo cp wp-config-sample.php wp-config.php
 Edit it:
 
 ```
-sudo vi wp-config.php
+sudo nano wp-config.php
 ```
 
 Find and modify the following settings:
