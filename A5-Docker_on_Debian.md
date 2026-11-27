@@ -23,16 +23,22 @@ Check your group membership and test Docker without `sudo`.
 
 ```bash
 id -nG
+```
+```bash
 docker run --rm hello-world
 ```
 
 ### 2. Run Debian and Alpine containers
 
-Start both containers in the background using the standard images. Check that `docker ps` shows both containers with the status `Up`. [docs.docker.com](https://docs.docker.com/reference/cli/docker/container/run/?utm_source=chatgpt.com)
+Start both containers in the background using the standard images. Check that `docker ps` shows both containers with the status `Up`. [docs.docker.com](https://docs.docker.com/reference/cli/docker/container/run/)
 
 ```bash
 docker run -dit --name debian-lab debian sh
+```
+```bash
 docker run -dit --name alpine-lab alpine sh
+```
+```bash
 docker ps
 ```
 
@@ -42,13 +48,22 @@ Open a shell in each container and read `/etc/os-release` to identify its Linux 
 
 ```bash
 docker exec -it debian-lab sh
+```
+```bash
 cat /etc/os-release
+```
+```bash
 exit
 ```
+---
 
 ```bash
 docker exec -it alpine-lab sh
+```
+```bash
 cat /etc/os-release
+```
+```bash
 exit
 ```
 
@@ -57,14 +72,34 @@ exit
 Stop both containers and verify that `docker ps -a` shows them with the status `Exited`. Then remove them and verify that both names are gone from the list. [docs.docker.com](https://docs.docker.com/reference/cli/docker/container/stop/)
 
 ```bash
-docker stop debian-lab alpine-lab
+docker stop debian-lab
+```
+```bash
+docker stop alpine-lab
+```
+```bash
+docker ps -a
+```
+---
+
+```bash
+docker rm debian-lab
+```
+```bash
+docker rm alpine-lab
+```
+```bash
 docker ps -a
 ```
 
-```bash
-docker rm debian-lab alpine-lab
-docker ps -a
-```
+### Part 1 – Summary
+
+You installed Docker Engine on Debian, configured your user account to run Docker commands without `sudo`, and used the Debian and Alpine images to practice the container lifecycle. You started both containers, opened a shell in each, then stopped and removed them.
+
+- **Pros:** Existing images let you start a Linux environment with a single command. You can inspect each container and manage its lifecycle independently.
+- **Cons:** You need to record the commands and options to recreate the same setup later. Removing a container also removes changes stored in its writable layer. Membership in the `docker` group grants root-level privileges on the host.
+
+---
 
 ## Part 2 – Build and Run Debian and Alpine Images (1 point)
 
@@ -117,7 +152,11 @@ Run these commands from the `docker-part2` directory. Each build uses its own fo
 
 ```bash
 docker build -t linux-hello-alpine ./alpine
+```
+```bash
 docker build -t linux-hello-debian ./debian
+```
+```bash
 docker image ls
 ```
 
@@ -129,13 +168,22 @@ Start a named container from each image. The final `sh` in each `docker run` com
 
 ```bash
 docker run -it --name hello-alpine linux-hello-alpine sh
+```
+```bash
 sh /hello.sh
+```
+```bash
 exit
 ```
+---
 
 ```bash
 docker run -it --name hello-debian linux-hello-debian sh
+```
+```bash
 sh /hello.sh
+```
+```bash
 exit
 ```
 
@@ -147,6 +195,8 @@ Run each image again and let Docker use the `CMD` from its Dockerfile. The scrip
 
 ```bash
 docker run --rm linux-hello-alpine
+```
+```bash
 docker run --rm linux-hello-debian
 ```
 
@@ -156,17 +206,39 @@ Use `docker ps -a` to find the two stopped containers from step 3. Remove them f
 
 ```bash
 docker ps -a
-docker rm hello-alpine hello-debian
-docker image rm linux-hello-alpine linux-hello-debian
+```
+```bash
+docker rm hello-debian
+```
+```bash
+docker image rm linux-hello-debian
+```
+---
+
+```bash
+docker rm hello-alpine
+```
+```bash
+docker image rm linux-hello-alpine
 ```
 
 Verify that the named containers and custom images are gone from their respective lists.
 
 ```bash
 docker ps -a
+```
+```bash
 docker image ls
 ```
 
+### Part 2 – Summary
+
+You wrote separate Dockerfiles for Debian and Alpine, built both images, and found them in the local image list. You ran the greeting script manually from an interactive shell and automatically through the Dockerfile’s `CMD`. You then removed the containers and custom images.
+
+- **Pros:** A Dockerfile records how to build an image. Every container created from that image starts with the same bundled script and default command.
+- **Cons:** Changes to the bundled script require rebuilding the image and creating a new container. An unpinned base image tag can point to a different base image on a later build.
+
+---
 
 ## Part 3 – Connect to Debian and Alpine Containers with SSH (1 point)
 
@@ -203,7 +275,7 @@ RUN apt-get update \
 
 EXPOSE 22
 
-CMD ["sh", "-c", "mkdir -p /run/sshd && ssh-keygen -A && exec /usr/sbin/sshd -D -e -o PasswordAuthentication=yes -o PermitRootLogin=no"]
+CMD ["bash", "-c", "mkdir -p /run/sshd && ssh-keygen -A && exec /usr/sbin/sshd -D -e -o PasswordAuthentication=yes -o PermitRootLogin=no"]
 ```
 
 **`alpine/Dockerfile`**
@@ -232,15 +304,21 @@ Run these commands from `docker-part3` on your Debian Docker host.
 
 ```bash
 docker build -t linux-ssh-debian ./debian
+```
+```bash
 docker build -t linux-ssh-alpine ./alpine
-
-docker run -d --name ssh-debian -p 127.0.0.1:2222:22 linux-ssh-debian
-docker run -d --name ssh-alpine -p 127.0.0.1:2223:22 linux-ssh-alpine
-
+```
+```bash
+docker run -d --name ssh-debian -p 2222:22 linux-ssh-debian
+```
+```bash
+docker run -d --name ssh-alpine -p 2223:22 linux-ssh-alpine
+```
+```bash
 docker ps
 ```
 
-Both containers listen on port `22` internally. Docker maps them to different ports on the host. Binding the published ports to `127.0.0.1` lets you connect from the Debian Docker host itself. [Docker Docs](https://docs.docker.com/engine/network/port-publishing?utm_source=chatgpt.com)
+Both containers listen on port `22` internally. Docker maps them to different ports on the host. [Docker Docs](https://docs.docker.com/engine/network/port-publishing)
 
 | Container | Port on the Debian host | Port inside the container |
 |---|---:|---:|
@@ -252,22 +330,28 @@ Both containers listen on port `22` internally. Docker maps them to different po
 From the Debian Docker host, connect to the Debian container. Enter `ssh-lab-demo` when prompted.
 
 ```bash
-ssh -p 2222 student@127.0.0.1
+ssh -p 2222 student@<HOST-IP-ADDRESS>
 ```
 
 Inside the SSH session, check your username, identify the Linux distribution, and verify that `sudo` works. `whoami` should print `student`, and `sudo whoami` should print `root`.
 
 ```sh
 whoami
+```
+```bash
 cat /etc/os-release
+```
+```bash
 sudo whoami
+```
+```bash
 exit
 ```
 
 Then connect to the Alpine container and repeat the same checks. This time, `/etc/os-release` should identify Alpine Linux.
 
 ```bash
-ssh -p 2223 student@127.0.0.1
+ssh -p 2223 student@<HOST-IP-ADDRESS>
 ```
 
 ### 5. Stop and remove both SSH containers and images
@@ -275,18 +359,47 @@ ssh -p 2223 student@127.0.0.1
 Exit the SSH session to return to the Debian Docker host. Stop both containers and check that `docker ps -a` lists them with the status `Exited`.
 
 ```bash
-docker stop ssh-debian ssh-alpine
+docker stop ssh-debian
+```
+```bash
+docker stop ssh-alpine
+```
+```bash
 docker ps -a
 ```
 
 Remove both containers and images and verify that `ssh-debian` and `ssh-alpine` are gone from the list.
 
+Containers:
 ```bash
-docker rm ssh-debian ssh-alpine
+docker rm ssh-debian
+```
+```bash
+docker rm ssh-alpine
+```
+```bash
 docker ps -a
-docker image rm ssh-hello-alpine ssh-hello-debian
+```
+Images:
+
+```bash
+docker image rm linux-ssh-debian
+```
+```bash
+docker image rm linux-ssh-alpine
+```
+```bash
 docker image ls
 ```
+
+### Part 3 – Summary
+
+You built Debian and Alpine images with OpenSSH Server, a regular user account, and `sudo`. You published each container’s SSH port on a different host port, signed in to both containers, verified `sudo` access, then stopped and removed the containers.
+
+- **Pros:** SSH lets you use familiar Linux administration tools from an SSH client. The exercise also shows how two containers can both listen on port `22` while using different ports on the host.
+- **Cons:** SSH adds a service and user accounts to maintain. A password written into a Dockerfile is visible to anyone who can read the file, so this setup is suitable for the lab only.
+
+---
 
 ## Part 4 – Manage Debian and Alpine as Separate Docker Compose Projects (1 point)
 
@@ -315,11 +428,12 @@ services:
   ssh:
     build: .
     image: compose-ssh-debian
+    container_name: debian-ssh-lab
     hostname: debian-ssh-lab
     environment:
       LAB_ROLE: "Debian SSH server"
     ports:
-      - "127.0.0.1:2322:22"
+      - "2222:22"
 ```
 
 **`alpine/compose.yaml`**
@@ -331,14 +445,15 @@ services:
   ssh:
     build: .
     image: compose-ssh-alpine
+    container_name: alpine-ssh-lab
     hostname: alpine-ssh-lab
     environment:
       LAB_ROLE: "Alpine SSH server"
     ports:
-      - "127.0.0.1:2323:22"
+      - "2223:22"
 ```
 
-Each `build: .` uses the Dockerfile in the same folder as its `compose.yaml`. Both projects use the service name `ssh`, and their distinct project names and host ports let them run independently. [docs.docker.com](https://docs.docker.com/reference/compose-file/build/?utm_source=chatgpt.com)
+Each `build: .` uses the Dockerfile in the same folder as its `compose.yaml`. Both projects use the service name `ssh`, and their distinct project names and host ports let them run independently. [docs.docker.com](https://docs.docker.com/reference/compose-file/build/)
 
 ### 2. Build and start the Debian project
 
@@ -346,14 +461,39 @@ From `docker-part4`, enter the `debian` folder. Build the image first, then star
 
 ```bash
 cd debian
+```
+```bash
 docker compose build
+```
+```bash
+docker images
+```
+```bash
 docker compose up -d
-docker compose ps
-docker compose exec ssh hostname
-docker compose exec ssh printenv LAB_ROLE
+```
+```bash
+docker ps
+```
+```bash
+docker exec -it debian-ssh-lab bash
+```
+```bash
+hostname
+```
+```bash
+env
+```
+```bash
+exit
 ```
 
 The container should report `debian-ssh-lab` as its hostname and `Debian SSH server` as its `LAB_ROLE`.
+
+From the Debian Docker host, connect to the Debian container. Enter `ssh-lab-demo` when prompted.
+
+```bash
+ssh -p 2222 student@<HOST-IP-ADDRESS>
+```
 
 ### 3. Build and start the Alpine project
 
@@ -361,15 +501,37 @@ Switch to the `alpine` folder and repeat the process using its Compose file.
 
 ```bash
 cd ../alpine
-docker compose build
-docker compose up -d
-docker compose ps
-docker compose exec ssh hostname
-docker compose exec ssh printenv LAB_ROLE
-docker image ls
+```
+```bash
+docker compose up -d --build
+```
+```bash
+docker ps
+```
+```bash
+docker images
+```
+```bash
+docker exec -it alpine-ssh-lab sh
+```
+```bash
+hostname
+```
+```bash
+env
+```
+```bash
+exit
 ```
 
 The container should report `alpine-ssh-lab` as its hostname and `Alpine SSH server` as its `LAB_ROLE`. Find both custom images, `compose-ssh-debian` and `compose-ssh-alpine`, in the image list.
+
+Then connect to the Alpine container and repeat the same checks.
+
+```bash
+ssh -p 2223 student@<HOST-IP-ADDRESS>
+```
+
 
 ### 4. Stop and remove each project separately
 
@@ -378,6 +540,10 @@ While still in the `alpine` folder, stop the Alpine container. Check that it app
 ```bash
 docker compose stop
 docker compose ps -a
+```
+Next deletes image (alse stop container if running)
+
+```bash
 docker compose down --rmi all
 docker compose ps -a
 ```
@@ -393,4 +559,11 @@ docker compose ps -a
 docker image ls
 ```
 
-Check that each project’s final `docker compose ps -a` lists no containers and that both custom images are absent from `docker image ls`.
+Check that each project’s final `docker ps -a` lists no containers and that both custom images are absent from `docker image ls`.
+
+### Part 4 – Summary
+
+You created separate Docker Compose projects for Debian and Alpine. Each `compose.yaml` defined its build context, image name, hostname, environment variable, and port mapping. You built, started, checked, stopped, and removed each project independently.
+
+- **Pros:** Each Compose file records how to build and run its service, so you can repeat the setup without retyping the original `docker run` options. Separate projects let you manage one container without interrupting the other.
+- **Cons:** You need to manage each project from its own directory or explicitly select its Compose file. Settings shared by both projects, such as a port-mapping convention, must be maintained in two files.
