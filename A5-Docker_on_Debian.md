@@ -552,10 +552,20 @@ Switch to the `debian` folder and repeat the cleanup for the Debian project. `do
 
 ```bash
 cd ../debian
+```
+```bash
 docker compose stop
-docker compose ps -a
+```
+```bash
+docker ps -a
+```
+```bash
 docker compose down --rmi all
-docker compose ps -a
+```
+```bash
+docker ps -a
+```
+```bash
 docker image ls
 ```
 
@@ -567,3 +577,436 @@ You created separate Docker Compose projects for Debian and Alpine. Each `compos
 
 - **Pros:** Each Compose file records how to build and run its service, so you can repeat the setup without retyping the original `docker run` options. Separate projects let you manage one container without interrupting the other.
 - **Cons:** You need to manage each project from its own directory or explicitly select its Compose file. Settings shared by both projects, such as a port-mapping convention, must be maintained in two files.
+
+---
+
+## Part 5 – Run Nginx, PHP, and MariaDB with Docker Compose (1 point)
+
+Build a Debian-based web container that runs Nginx and PHP-FPM. Use a single `compose.yaml` to run it alongside MariaDB. Verify that PHP can connect to MariaDB and run a SQL query.
+
+| Compose service | Components | Role |
+|---|---|---|
+| `web` | Debian, Nginx, PHP-FPM | Receives HTTP requests and runs PHP code. |
+| `db` | MariaDB | Runs SQL queries and stores database files in a named volume. |
+
+### 1. Create the project folders
+
+Create `docker-part5` on your Debian Docker host.
+
+```text
+docker-part5/
+├── compose.yaml
+└── web/
+    ├── Dockerfile
+    ├── nginx.conf
+    └── index.php
+```
+
+### 2. Build the Debian web image
+
+Create `web/Dockerfile`. The Debian 13 base image uses PHP 8.4. The `php8.4-mysql` package adds the PHP driver used to connect to MariaDB.
+
+```dockerfile
+FROM debian:13-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        nginx php8.4-fpm php8.4-mysql \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /run/php \
+    && printf '[www]\nclear_env = no\n' \
+        > /etc/php/8.4/fpm/pool.d/zz-lab-env.conf
+
+COPY nginx.conf /etc/nginx/sites-available/default
+COPY index.php /var/www/html/index.php
+
+EXPOSE 80
+
+CMD ["sh", "-c", "php-fpm8.4 -D && exec nginx -g 'daemon off;'"]
+```
+
+PHP-FPM runs in the background. Nginx stays in the foreground as the container’s main process. The PHP-FPM configuration makes the Compose environment variables available to the PHP script.
+
+### 3. Configure Nginx and create the PHP page
+
+Create `web/nginx.conf`. Nginx passes requests for `/index.php` to PHP-FPM through a Unix socket inside the web container.
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+    root /var/www/html;
+    index index.php;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location = /index.php {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root/index.php;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+    }
+}
+```
+
+Create `web/index.php`. Replace `YOUR NAME` with your own name or personal identifier. The page queries MariaDB for the name of the current database.
+
+```php
+<?php
+
+header('Content-Type: text/plain; charset=utf-8');
+
+try {
+    $host = getenv('DB_HOST');
+    $database = getenv('DB_NAME');
+    $dsn = "mysql:host=$host;dbname=$database;charset=utf8mb4";
+
+    $pdo = new PDO($dsn, getenv('DB_USER'), getenv('DB_PASSWORD'));
+    $databaseName = $pdo->query('SELECT DATABASE()')->fetchColumn();
+
+    echo "Hello from YOUR NAME!\n";
+    echo "Connected to MariaDB. Current database: $databaseName\n";
+} catch (PDOException $error) {
+    http_response_code(500);
+    echo "Could not connect to MariaDB or run the query.\n";
+}
+```
+
+### 4. Define both services in one Compose file
+
+Create `compose.yaml` in `docker-part5`.
+
+```yaml
+name: web-lab
+
+services:
+  web:
+    build: ./web
+    image: debian-web-lab
+    container_name: debian-web-lab
+    hostname: debian-web-lab
+    ports:
+      - "8080:80"
+    environment:
+      DB_HOST: db
+      DB_NAME: labdb
+      DB_USER: labuser
+      DB_PASSWORD: lab-db-password
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:11.4
+    container_name: db-web-lab
+    hostname: db-web-lab
+    environment:
+      MARIADB_DATABASE: labdb
+      MARIADB_USER: labuser
+      MARIADB_PASSWORD: lab-db-password
+      MARIADB_ROOT_PASSWORD: lab-root-password
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  db-data:
+```
+
+Compose gives both services a shared network. PHP reaches MariaDB using `db`, the service name. Only the web service publishes a host port. The health check lets Compose wait until MariaDB is ready before starting the web service. Use the example passwords only for this lab. [Docker Docs](https://docs.docker.com/compose/how-tos/networking/)
+
+### 5. Start and test the project
+
+Run these commands from `docker-part5`.
+
+```bash
+docker compose up -d --build
+```
+```bash
+docker compose ps
+```
+```bash
+curl -fsS http://<HOST-IP-ADDRESS>:8080/
+```
+
+Run `curl` on the Debian Docker host, or open `http://<HOST-IP-ADDRESS>:8080/` in a browser on that host. Check that the response shows your greeting and `Current database: labdb`. The database name comes from the SQL query, so the response verifies that the request went through Nginx and PHP to MariaDB.
+
+### 6. Open a shell and connect to MariaDB
+
+Run these commands from `docker-part5` while both services are running.
+
+**Open a shell in the Debian web container**
+
+```bash
+docker compose exec web sh
+```
+
+```bash
+docker exec -it debian-web-lab bash
+```
+
+Inside the container, run these commands to confirm that you are in Debian and that PHP is installed. Use `exit` to return to the Docker host.
+
+```sh
+cat /etc/os-release
+php -v
+exit
+```
+
+**Open a MariaDB session in the database container**
+
+```bash
+docker exec -it db-web-lab mariadb -u labuser -p labdb
+```
+
+Enter `lab-db-password` when prompted. At the MariaDB prompt, run the same query as the PHP page and confirm that it returns `labdb`.
+
+```sql
+SELECT DATABASE();
+exit
+```
+
+### 7. Stop and remove the containers
+
+Stop both services and check that their containers show `Exited`. Then bring the project down and confirm that the containers are gone.
+
+```bash
+docker compose stop
+```
+```bash
+docker compose ps -a
+```
+```bash
+docker compose down -v
+```
+```bash
+docker compose ps -a
+```
+
+The `db-data` volume keeps the database files for the next time you start the project.
+
+### Part 5 – Summary
+
+You used one Compose file to run a two-service application. Nginx accepted the HTTP request, PHP-FPM ran the script, and MariaDB returned the result of a SQL query.
+
+- **Pros** — One Compose file brings up the whole application. The web service can reach the database by service name, and the named volume preserves database files when the containers are removed.
+- **Cons** — Troubleshooting can span Nginx, PHP-FPM, and MariaDB. Nginx and PHP-FPM share a container, so they are rebuilt and restarted together. The example database passwords are visible in the Compose file.
+
+---
+
+## Part 6 – Install WordPress with Docker Compose (1 point)
+
+Build a Debian 13 image that runs Nginx, PHP-FPM, and WordPress. Use Docker Compose to run it alongside MariaDB. Complete the WordPress installation in a browser and verify that WordPress created its database tables.
+
+### 1. Create the project and download WordPress
+
+Run these commands on your Debian Docker host.
+
+```bash
+mkdir -p ~/docker-part6/web
+cd ~/docker-part6
+curl -fL https://wordpress.org/latest.tar.gz -o wordpress.tar.gz
+tar -xzf wordpress.tar.gz -C web
+cp web/wordpress/wp-config-sample.php web/wordpress/wp-config.php
+```
+
+By the end of the next three steps, your project should have this structure.
+
+```text
+docker-part6/
+├── compose.yaml
+├── wordpress.tar.gz
+└── web/
+    ├── Dockerfile
+    ├── nginx.conf
+    └── wordpress/
+        ├── index.php
+        ├── wp-config.php
+        └── ...
+```
+
+### 2. Configure WordPress
+
+Open `web/wordpress/wp-config.php`. Replace the four existing database definitions with the following lines. Keep the rest of the file, including `DB_CHARSET`, the table prefix, and the final line that loads WordPress.
+
+```php
+define('DB_NAME', getenv('DB_NAME'));
+define('DB_USER', getenv('DB_USER'));
+define('DB_PASSWORD', getenv('DB_PASSWORD'));
+define('DB_HOST', getenv('DB_HOST'));
+```
+
+Replace the eight placeholder authentication key and salt definitions with the eight lines from the [WordPress secret-key generator](https://api.wordpress.org/secret-key/1.1/salt/). Docker Compose will provide the database settings when the web container starts.
+
+### 3. Create the web server configuration and Dockerfile
+
+Create `web/nginx.conf` with the following content.
+
+```nginx
+server {
+    listen 80;
+    server_name _;
+    root /var/www/wordpress;
+    index index.php;
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    location ~ /\. {
+        deny all;
+    }
+
+    location ~* /wp-content/uploads/.*\.php$ {
+        deny all;
+    }
+
+    location ~ \.php$ {
+        try_files $uri =404;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_pass unix:/run/php/php8.4-fpm.sock;
+    }
+}
+```
+
+Create `web/Dockerfile` with the following content.
+
+```dockerfile
+FROM debian:13-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        nginx php8.4-fpm php8.4-mysql php8.4-curl php8.4-gd \
+        php8.4-mbstring php8.4-xml php8.4-zip php8.4-intl \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /run/php \
+    && printf '[www]\nclear_env = no\n' \
+        > /etc/php/8.4/fpm/pool.d/zz-lab-env.conf
+
+COPY nginx.conf /etc/nginx/sites-available/default
+COPY --chown=www-data:www-data wordpress/ /var/www/wordpress/
+RUN chown root:www-data /var/www/wordpress/wp-config.php \
+    && chmod 640 /var/www/wordpress/wp-config.php
+
+EXPOSE 80
+
+CMD ["sh", "-c", "php-fpm8.4 -D && exec nginx -g 'daemon off;'"]
+```
+
+Nginx passes PHP requests to PHP-FPM through a Unix socket. The `clear_env` setting lets PHP-FPM pass the Compose environment variables to WordPress.
+
+### 4. Define the web and database services
+
+Create `compose.yaml` in `docker-part6`.
+
+```yaml
+name: wordpress-lab
+
+services:
+  web:
+    build: ./web
+    image: debian-wordpress-lab
+    container_name: debian-wordpress-lab
+    hostname: debian-wordpress-lab
+    ports:
+      - "8081:80"
+    environment:
+      DB_HOST: db
+      DB_NAME: wordpress
+      DB_USER: wpuser
+      DB_PASSWORD: wp-lab-db-password
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:11.4
+    container_name: db-wordpresseb-lab
+    hostname: db-wordpress-lab
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wpuser
+      MARIADB_PASSWORD: wp-lab-db-password
+      MARIADB_ROOT_PASSWORD: wp-lab-root-password
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  db-data:
+```
+
+WordPress reaches MariaDB on the Compose network using the service name `db`. On the first start with an empty volume, MariaDB creates the `wordpress` database and the `wpuser` account. Use the example database passwords only for this lab.
+
+### 5. Start the project and complete the installation
+
+From `docker-part6`, build the web image and start both services.
+
+```bash
+docker compose up -d --build
+docker compose ps
+```
+
+Open [http://127.0.0.1:8081/](http://127.0.0.1:8081/) in a browser on the Docker host. If your browser is on another computer, run the following command **on that computer**, replacing `YOUR_USER` and `DOCKER_HOST` with your SSH username and the address you use to reach the Debian server. Keep the tunnel open and visit the same URL in your browser.
+
+```bash
+ssh -N -L 8081:127.0.0.1:8081 YOUR_USER@DOCKER_HOST
+```
+
+Complete the WordPress setup wizard. Include your name or personal identifier in the site title, create a WordPress administrator account, and sign in to the dashboard at `/wp-admin/`.
+
+### 6. Verify the database and remove the containers
+
+On the Docker host, open a MariaDB session from `docker-part6`.
+
+```bash
+docker compose exec db mariadb -u wpuser -p wordpress
+```
+
+Enter `wp-lab-db-password` when prompted, then list the tables.
+
+```sql
+SHOW TABLES;
+EXIT;
+```
+
+With the default table prefix, you should see tables such as `wp_options`, `wp_posts`, and `wp_users`. Capture the evidence for Part 6 before removing the containers.
+
+```bash
+docker compose down
+docker compose ps -a
+```
+
+The named volume preserves the database when you bring the project down.
+
+### Part 6 – Summary
+
+You built a Debian-based WordPress image, ran it alongside MariaDB, completed the browser installation, and verified that WordPress created its database tables.
+
+- **Pros** — The Dockerfile describes the web stack, and one Compose file starts both services. The named volume keeps the database when the containers are replaced.
+- **Cons** — Updating the WordPress files bundled in the image requires a rebuild. Files added through WordPress, such as media uploads, are stored in the web container in this exercise and are lost when that container is removed.
+
+---
+
+## 📤 Submission and grading
+
+Submit readable screenshots labeled **Part 1** through **Part 6**. Include your name or another personal identifier in the submission. Use enough screenshots to show the required commands and results clearly. Each part earns **1 point** when its evidence meets the criteria below, for a maximum of **6 points**.
+
+| Part | Evidence required for 1 point |
+|---|---|
+| **1 – First containers** | Run `hello-world` without `sudo`. Show both Debian and Alpine containers running, identify each distribution from inside its shell, and verify that both containers were stopped and removed. |
+| **2 – Dockerfiles** | Show both custom images in the local image list. Show the personalized greeting from both containers using an interactive shell and using `docker run --rm`. Verify the named containers and custom images were removed. |
+| **3 – SSH containers** | Show successful SSH logins to both containers as `student`. Identify each distribution and show that `sudo whoami` returns `root`. Verify that both SSH containers were stopped and removed. |
+| **4 – Separate Compose projects** | Show each project being built and started separately. Verify both hostnames and `LAB_ROLE` values, then show that the containers were stopped and that each project’s container and image were removed. |
+| **5 – Web and database services** | Show both Compose services running and the personalized PHP response reporting `labdb`. Show the Debian shell check and a MariaDB session where `SELECT DATABASE();` returns `labdb`. Verify that both containers were removed. |
+| **6 – WordPress** | Show both Compose services running, the WordPress dashboard with your personalized site title, and the WordPress tables returned by `SHOW TABLES;`. |
